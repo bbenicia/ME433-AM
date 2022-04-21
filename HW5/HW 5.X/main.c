@@ -41,17 +41,17 @@
 #pragma config PMDL1WAY = OFF // allow multiple reconfigurations
 #pragma config IOL1WAY = OFF // allow multiple reconfigurations
 
-// end from uart code 
+// end from uart code
 
 
 
 
-void initSPI() ; 
-unsigned char spi_io(unsigned char o) ; 
+void initSPI() ;
+unsigned char spi_io(unsigned char o) ;
 
 
 int main(){
-    
+   
     __builtin_disable_interrupts(); // disable interrupts while initializing things
 
     // set the CP0 CONFIG register to indicate that kseg0 is cacheable (0x3)
@@ -69,103 +69,112 @@ int main(){
     // do your TRIS and LAT commands here
     TRISAbits.TRISA4 = 0;
     TRISBbits.TRISB4 = 1;
-    LATAbits.LATA4 = 0; 
-    
-    
-    initSPI() ; 
+    LATAbits.LATA4 = 0;
    
-    __builtin_enable_interrupts() ; 
+   
+    initSPI() ;
+   
+    __builtin_enable_interrupts() ;
  
        
     unsigned short v = 0;
     unsigned short v2 = 0;//voltage
-    unsigned char c = 0; //channel 
+    unsigned char c = 0; //channel
     unsigned char c2 = 0;
-    unsigned short p = 0; 
+    unsigned short p = 0;
     unsigned short p2 = 0;
-    
+   
     double wave1[100];
-    double wave2[100]; 
+    double wave2[100];
    
-    // 8 bit 0 to 256 
-    
-    int i = 0  ; 
+    // 8 bit 0 to 256
    
-    
-    while (1) {
-        
+    int i = 0  ;
+   
+
         //make waves
         //y=Asin(2?fx+B)
-        
-        for (i=0 ; i <100 ; i++ ) { 
-            wave1[i]= 128*sin(2*pi*2*i*.01) +256 ; //sine wave 
-            
-           // wave3 = abs((i % 1) - 256)
+       
+        for (i=0 ; i <100 ; i++ ) {
+            wave1[i]= 127*sin(2*pi*2*i*.01) + 127 ; //sine wave
            
-           //triangle wave 
-            
+           
+           
+           //triangle wave
+           
             if (i<50){
-               wave2[i]= (512/5)*i ;  
+               wave2[i]= 5.1*i ;  
             }
             else {
-               wave2[i]= -1 * (512/5)*i ;  
+               wave2[i]=255 - (i* 5.1) + 255 ;  
             }
-            
+         
+           
         }
+
+
+
+   
+    while (1) {
+       
         
-        
-        
+       
+       
+       
         for (i=0 ; i <100 ; i++ ) {
-            
-        
+           
+       
         // sine wave
-        v = wave1[i]; 
-        p = c <<11 ; 
-        p = p | (0b111 << 8) ; 
-        p = p | (v<<2); 
-        
+        c = 0 ; 
+        v = wave1[i];
+        p = c <<15 ;
+        p = p | (0b111 << 12) ;
+        p = p | (v<<4);
+       
         //triangle wave
+        c2 = 1;
         v2 = wave2[i];
-        p2 = c2 <<11 ; 
-        p2 = p2 | (0b111 << 8) ; 
-        p2 = p2 | (v2<<2); 
-        
+        p2 = c2 <<15 ;
+        p2 = p2 | (0b111 << 12) ;
+        p2 = p2 | (v2<<4);
+       
         //sine wave
-        LATAbits.LATA0 = 0 ; // CS low 
-        spi_io(p >> 6) ; 
-        spi_io(p) ; 
-        LATAbits.LATA0 = 1 ; //CS high 
-        
+        LATAbits.LATA0 = 0 ; // CS low
+        spi_io(p >> 8) ;
+        spi_io(p) ;
+        LATAbits.LATA0 = 1 ; //CS high
+       
         //triangle wave
-        LATAbits.LATA0 = 0 ; // CS low 
-        spi_io(p2 >> 6) ; 
-        spi_io(p2) ; 
-        LATAbits.LATA0 = 1 ; //CS high 
-        
+        LATAbits.LATA0 = 0 ; // CS low
+        spi_io(p2 >> 8) ;
+        spi_io(p2) ;
+        LATAbits.LATA0 = 1 ; //CS high
+       
     _CP0_SET_COUNT(0);
-    
-    //while (_CP0_GET_COUNT()< (12*1000000) ){   
-    while (_CP0_GET_COUNT()< (24*1000000) ){   //1Hz
+   
+    //while (_CP0_GET_COUNT()< (12*1000000) ){  
+    while (_CP0_GET_COUNT()< (24*1000000)* 0.01) {   //1Hz
+
                 }
-        
+       
     }
     }
-    
-    
+   
+   
 }
 
 
 // initialize SPI1
 void initSPI() {
     // Pin B14 has to be SCK1
-    
+   
     // Turn of analog pins
-    ANSELA =0 ; 
+    ANSELA =0 ;
     //...
     // Make an output pin for CS
     //cs is slave select?
-    TRISAbits.TRISA0 = 0; 
-    LATAbits.LATA0 = 1; 
+    TRISAbits.TRISA0 = 0;
+    LATAbits.LATA0 = 1;
     //...
     //...
     // Set SDO1
@@ -174,18 +183,18 @@ void initSPI() {
    
     //...
     // Set SDI1
-    SDI1Rbits.SDI1R= 0b0001 ; 
+    SDI1Rbits.SDI1R= 0b0001 ;
     //mosi?
     //...
 
     // setup SPI1
     SPI1CON = 0; // turn off the spi module and reset it
     SPI1BUF; // clear the rx buffer by reading from it
-    SPI1BRG = 500; // 1000 for 24kHz, 1 for 12MHz; // baud rate to 10 MHz [SPI1BRG = (48000000/(2*desired))-1]
+    SPI1BRG = 1000; // 1000 for 24kHz, 1 for 12MHz; // baud rate to 10 MHz [SPI1BRG = (48000000/(2*desired))-1]
     SPI1STATbits.SPIROV = 0; // clear the overflow bit
     SPI1CONbits.CKE = 1; // data changes when clock goes from hi to lo (since CKP is 0)
     SPI1CONbits.MSTEN = 1; // master operation
-    SPI1CONbits.ON = 1; // turn on spi 
+    SPI1CONbits.ON = 1; // turn on spi
 }
 
 
