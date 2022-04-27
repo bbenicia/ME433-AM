@@ -3,7 +3,7 @@
 
 
 #include <stdio.h>
-
+#include "i2c_master_noint.h" 
 
 // DEVCFG0
 #pragma config DEBUG = OFF // disable debugging
@@ -36,10 +36,27 @@
 #pragma config PMDL1WAY = OFF // allow multiple reconfigurations
 #pragma config IOL1WAY = OFF // allow multiple reconfigurations
 
+
 //UART functions
 void readUART1(char * string, int maxLength);
 void writeUART1(const char * string);
 
+
+void blinkled();
+
+unsigned char writeadd=  0b01000000 ; //write
+unsigned char readadd= 0b01000001 ; //read 
+unsigned char address=  0b01000000 ; 
+//unsigned char address=  0b0100000 ; 
+unsigned char IODIR = 0x00 ; 
+unsigned char GPIO = 0x09; 
+unsigned char OLAT = 0x0A ;
+
+    //IODIR = 00h 
+    //GPIO = 09h
+
+void mcpWrite (unsigned char add , unsigned char reg , unsigned char val) ;
+unsigned char mcpRead( unsigned char add, unsigned char reg ) ; 
 
 int main() {
 
@@ -62,6 +79,7 @@ int main() {
      TRISBbits.TRISB4 = 1; 
      LATAbits.LATA4 = 0; 
      
+    //UART Specific stuff 
     U1RXRbits.U1RXR = 0b0001; // Set B6 to U1RX
     RPB7Rbits.RPB7R = 0b0001; // Set B7 to U1TX
 
@@ -83,10 +101,83 @@ int main() {
     // enable the uart
     U1MODEbits.ON = 1;
     
+    char m[100]; //array
     
+   //end uart specific stuff  
+     
+    i2c_master_setup();  
+    
+    mcpWrite(address, IODIR , 0b01111111 ) ;
+    mcpWrite(address , OLAT , 0b10000000) ;
+     
+     
+     __builtin_enable_interrupts();
+     
+     unsigned char state ; 
+     unsigned char st; // returned received value from read function
+    
+     while (1) {
+         //turn on GP7 
+         //delay 
+         //turn off GP7 
+         st = mcpRead(address,GPIO );  // returned received value from read function
+         state = st & 1  ;
+         if (state ==0) {
+             mcpWrite(address, OLAT , 0b010000000 ) ; //turn on led
+         }
+         else {
+             mcpWrite(address, OLAT , 0b000000000 ) ; //turn off 
+         }
+         
+         
+         LATAINV = 0b10000; 
+         _CP0_SET_COUNT(0);
+                while (_CP0_GET_COUNT()< (12*1000000) ){   
+                }
+     }
+     
+    
+     
+           
+    
+    
+  
+}
 
-    __builtin_enable_interrupts();
+
+void mcpWrite (unsigned char add , unsigned char reg , unsigned char val){
+    i2c_master_start();
+    i2c_master_send(add);
+    i2c_master_send(reg);
+    i2c_master_send(val);
+    i2c_master_stop();
+   
+//for write 
+// start bit
+//address write 
+// send data register 
+//send data value 
+//stop bit
+
     
+}
+
+
+unsigned char mcpRead( unsigned char add, unsigned char reg ){
+    i2c_master_start();
+    i2c_master_send(add); //write address 
+    i2c_master_send(reg);
+    i2c_master_restart();
+    i2c_master_send(readadd); //read address 
+    unsigned char r = i2c_master_recv(); 
+    i2c_master_ack(1);
+    i2c_master_stop();
+    return r ; 
+}
+
+//blinkled 
+
+void blinkled(){
     char m[100]; //array
 
     while (1) {
@@ -114,10 +205,6 @@ int main() {
                 count--;
             } 
             
-            //print 
-            sprintf(m,"Sandwich!");
-            writeUART1(m);
-            
         }
         else {
             LATAbits.LATA4 = 0 ;
@@ -126,11 +213,8 @@ int main() {
 }
 
 
-// READ AND WRITE UART FUNCTIONS
 
-// Read from UART1
-// block other functions until you get a '\r' or '\n'
-// send the pointer to your char array and the number of elements in the array
+// uart functions 
 void readUART1(char * message, int maxLength) {
   char data = 0;
   int complete = 0, num_bytes = 0;
