@@ -55,6 +55,7 @@ int main() {
      TRISBbits.TRISB4 = 1; 
 
     __builtin_enable_interrupts();
+    
 
     while (1) {
         // use _CP0_SET_COUNT(0) and _CP0_GET_COUNT() to test the PIC timing

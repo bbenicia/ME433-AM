@@ -1,9 +1,10 @@
 #include<xc.h>           // processor SFR definitions
 #include<sys/attribs.h>  // __ISR macro
 
-
 #include <stdio.h>
 
+#include "i2c_master_noint.h"
+#include "mpu6050.h"
 
 // DEVCFG0
 #pragma config DEBUG = OFF // disable debugging
@@ -36,10 +37,14 @@
 #pragma config PMDL1WAY = OFF // allow multiple reconfigurations
 #pragma config IOL1WAY = OFF // allow multiple reconfigurations
 
-//UART functions
-void readUART1(char * string, int maxLength);
-void writeUART1(const char * string);
+#define PIC32_SYS_FREQ 48000000ul // 48 million Hz
+#define PIC32_DESIRED_BAUD 230400 // Baudrate for RS232
 
+void UART1_Startup(void);
+void ReadUART1(char * string, int maxLength);
+void WriteUART1(const char * string);
+
+void blink();
 
 int main() {
 
@@ -58,81 +63,79 @@ int main() {
     DDPCONbits.JTAGEN = 0;
 
     // do your TRIS and LAT commands here
-     TRISAbits.TRISA4 = 0; 
-     TRISBbits.TRISB4 = 1; 
-     LATAbits.LATA4 = 0; 
-     
+    TRISAbits.TRISA4 = 0;
+    TRISBbits.TRISB4 = 1;
+    LATAbits.LATA4 = 0;
+    
+    TRISAbits.TRISA4 = 0;
+    TRISBbits.TRISB4 = 1;
+    
     U1RXRbits.U1RXR = 0b0001; // Set B6 to U1RX
     RPB7Rbits.RPB7R = 0b0001; // Set B7 to U1TX
-
     
-    //UART CODE from NU32
-    // turn on UART3 without an interrupt
-    U1MODEbits.BRGH = 0; // set baud to NU32_DESIRED_BAUD
-    U1BRG = ((48000000 / 230400) / 16) - 1;
-
-    // 8 bit, no parity bit, and 1 stop bit (8N1 setup)
-    U1MODEbits.PDSEL = 0;
-    U1MODEbits.STSEL = 0;
-
-    // configure TX & RX pins as output & input pins
-    U1STAbits.UTXEN = 1;
-    U1STAbits.URXEN = 1;
+    UART1_Startup();
     
-
-    // enable the uart
-    U1MODEbits.ON = 1;
-    
-    
-
     __builtin_enable_interrupts();
     
-    char m[100]; //array
-
-    while (1) {
-        // use _CP0_SET_COUNT(0) and _CP0_GET_COUNT() to test the PIC timing
-        // remember the core timer runs at half the sysclk
-        //LATAbits.LATA4 = 1;
-        
-        int count = 4;
-        
-        if (PORTBbits.RB4 == 0) {
-            int light = 1;
-            while (count > 0) {
-                if (light) {
-                    LATAbits.LATA4 = 1; 
-                } else {
-                    LATAbits.LATA4 = 0; 
-                }
-                _CP0_SET_COUNT(0);
-                while (_CP0_GET_COUNT()< (12*1000000) ){   
-                }
-                if (light) {
-                    light = 0;
-                } else {
-                    light = 1;
-                }
-                count--;
-            } 
-            
-            //print 
-            sprintf(m,"Sandwich!");
-            writeUART1(m);
-            
-        }
-        else {
-            LATAbits.LATA4 = 0 ;
+    // init the imu
+    init_mpu6050();
+    
+    char m_in[100]; // char array for uart data coming in
+    char m_out[200]; // char array for uart data going out
+    int i;
+    #define NUM_DATA_PNTS 300 // how many data points to collect at 100Hz
+    float ax[NUM_DATA_PNTS], ay[NUM_DATA_PNTS], az[NUM_DATA_PNTS], gx[NUM_DATA_PNTS], gy[NUM_DATA_PNTS], gz[NUM_DATA_PNTS], temp[NUM_DATA_PNTS];
+    
+    //sprintf(m_out,"MPU-6050 WHO_AM_I: %X\r\n",whoami());
+    //WriteUART1(m_out);
+   
+     
+    char who = whoami(); // ask if the imu is there
+    if (who != 0x68){
+        // if the imu is not there, get stuck here forever
+        while(1){
+            LATAbits.LATA4 = 1;
         }
     }
+    
+    char IMU_buf[IMU_ARRAY_LEN]; // raw 8 bit array for imu data
+
+    while (1) {
+       blink();
+        
+        ReadUART1(m_in,100); // wait for a newline
+        // don't actually have to use what is in m
+        
+        // collect data
+        for (i=0; i<NUM_DATA_PNTS; i++){
+            _CP0_SET_COUNT(0);
+            // read IMU
+            burst_read_mpu6050(IMU_buf);
+            ax[i] = conv_xXL(IMU_buf);
+            ay[i] = conv_yXL(IMU_buf);
+            az[i] = conv_zXL(IMU_buf);
+            gx[i] = conv_xG(IMU_buf);
+            gy[i] = conv_yG(IMU_buf);
+            gz[i] = conv_zG(IMU_buf);
+            temp[i] = conv_temp(IMU_buf);
+            
+            while(_CP0_GET_COUNT()<24000000/2/100){}
+        }
+        
+        // print data
+        for (i=0; i<NUM_DATA_PNTS; i++){
+            sprintf(m_out,"%d %f %f %f %f %f %f %f\r\n",NUM_DATA_PNTS-i,ax[i],ay[i],az[i],gx[i],gy[i],gz[i],temp[i]);
+            WriteUART1(m_out);
+        }
+        
+    }    
+
 }
-
-
-// READ AND WRITE UART FUNCTIONS
 
 // Read from UART1
 // block other functions until you get a '\r' or '\n'
 // send the pointer to your char array and the number of elements in the array
-void readUART1(char * message, int maxLength) {
+void ReadUART1(char * message, int maxLength) {
   char data = 0;
   int complete = 0, num_bytes = 0;
   // loop until you get a '\r' or '\n'
@@ -156,7 +159,7 @@ void readUART1(char * message, int maxLength) {
 }
 
 // Write a character array using UART1
-void writeUART1(const char * string) {
+void WriteUART1(const char * string) {
   while (*string != '\0') {
     while (U1STAbits.UTXBF) {
       ; // wait until tx buffer isn't full
@@ -164,4 +167,36 @@ void writeUART1(const char * string) {
     U1TXREG = *string;
     ++string;
   }
+}
+
+
+void UART1_Startup() {
+  // disable interrupts
+  __builtin_disable_interrupts();
+
+  // turn on UART1 without an interrupt
+  U1MODEbits.BRGH = 0; // set baud to PIC32_DESIRED_BAUD
+  U1BRG = ((PIC32_SYS_FREQ / PIC32_DESIRED_BAUD) / 16) - 1;
+
+  // 8 bit, no parity bit, and 1 stop bit (8N1 setup)
+  U1MODEbits.PDSEL = 0;
+  U1MODEbits.STSEL = 0;
+
+  // configure TX & RX pins as output & input pins
+  U1STAbits.UTXEN = 1;
+  U1STAbits.URXEN = 1;
+
+  // enable the uart
+  U1MODEbits.ON = 1;
+
+  __builtin_enable_interrupts();
+}
+
+void blink(){
+    LATAbits.LATA4 = 1;
+    _CP0_SET_COUNT(0);
+    while(_CP0_GET_COUNT()<24000000/2/20){}
+    LATAbits.LATA4 = 0;
+    _CP0_SET_COUNT(0);
+    while(_CP0_GET_COUNT()<24000000/2/20){}
 }
