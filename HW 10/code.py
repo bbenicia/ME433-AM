@@ -4,11 +4,11 @@ from ulab import numpy as np # to get access to ulab numpy functions
 import time 
 #import matplotlib.pyplot as plt
 
-#a=np.zeros(1024)
+swaves=np.zeros(1024)
 pi = 3.1415 
 f1 = 1 
-f2 = 10
-f3 = 20 
+f2 = 4
+f3 = 6 
 t = np.linspace ( 0 , 10 , 1024)
 
 # Test some stats functions, like
